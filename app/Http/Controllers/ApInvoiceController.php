@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\ApInvoice;
 use App\Models\GlAccount;
+use App\Models\GlJournal;
+use App\Models\GlSetting;
 use App\Models\PurchaseOrder;
 use App\Models\Tax;
 use App\Models\Vendor;
@@ -135,9 +137,75 @@ class ApInvoiceController extends Controller
     {
         abort_if($invoice->status !== 'diajukan', 403);
 
-        $invoice->update(['status' => 'disetujui', 'approved_by' => Auth::id(), 'approved_at' => now()]);
+        DB::transaction(function () use ($invoice) {
+            $invoice->update(['status' => 'disetujui', 'approved_by' => Auth::id(), 'approved_at' => now()]);
+            $this->postInvoiceJournal($invoice);
+        });
 
         return back()->with('success', 'AP Invoice disetujui.');
+    }
+
+    /**
+     * Dr {line.gl_account_id} per line + Dr PPN Masukan (tax per-line, beda dari AR yang flat
+     * rate) = Cr AP Control (total - pph_amount) + Cr PPh Payable (pph_amount, kalau ada —
+     * dipotong langsung dari yang dibayar ke vendor, disetor sendiri ke kas negara).
+     */
+    private function postInvoiceJournal(ApInvoice $invoice): void
+    {
+        $invoice->load('lines.tax');
+
+        $apControlId = GlSetting::where('key', 'ap_control')->first()?->gl_account_id;
+        if (! $apControlId) {
+            throw new \RuntimeException('GL Account untuk AP Control belum diatur di GL Settings.');
+        }
+
+        $lines = [];
+
+        foreach ($invoice->lines as $line) {
+            $lines[] = [
+                'gl_account_id' => $line->gl_account_id,
+                'debit' => round($line->amount, 2),
+                'credit' => 0,
+                'description' => $line->description,
+            ];
+
+            if ($line->tax) {
+                $taxAmount = round($line->amount * $line->tax->rate / 100, 2);
+
+                if ($taxAmount > 0) {
+                    $taxAccountId = $line->tax->gl_account_id;
+                    if (! $taxAccountId) {
+                        throw new \RuntimeException("Pajak {$line->tax->name} belum punya GL Account, lengkapi dulu di master pajak.");
+                    }
+
+                    $lines[] = ['gl_account_id' => $taxAccountId, 'debit' => $taxAmount, 'credit' => 0, 'description' => 'PPN Masukan - '.$line->description];
+                }
+            }
+        }
+
+        $lines[] = [
+            'gl_account_id' => $apControlId,
+            'debit' => 0,
+            'credit' => round($invoice->total - $invoice->pph_amount, 2),
+            'description' => 'AP - '.$invoice->invoice_no,
+        ];
+
+        if ($invoice->pph_amount > 0) {
+            $pphAccountId = GlSetting::where('key', 'pph_payable')->first()?->gl_account_id;
+            if (! $pphAccountId) {
+                throw new \RuntimeException('GL Account untuk PPh Payable belum diatur di GL Settings.');
+            }
+
+            $lines[] = ['gl_account_id' => $pphAccountId, 'debit' => 0, 'credit' => round($invoice->pph_amount, 2), 'description' => 'PPh - '.$invoice->invoice_no];
+        }
+
+        GlJournal::postBalanced([
+            'journal_date' => $invoice->invoice_date,
+            'description' => 'AP Invoice '.$invoice->invoice_no,
+            'source_type' => 'ap_invoice',
+            'source_id' => $invoice->id,
+            'created_by' => Auth::id(),
+        ], $lines);
     }
 
     public function reject(ApInvoice $invoice): RedirectResponse
