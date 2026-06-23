@@ -25,7 +25,10 @@ Route::middleware('auth')->group(function () {
     Route::put('users/{user}', [UserController::class, 'update'])->name('users.update')->middleware('role:sso_admin,admin');
 
     // --- Reports ---
+    Route::get('reports/open-payables', [ReportController::class, 'openPayables'])->name('reports.open-payables');
     Route::get('reports/aged-payables', [ReportController::class, 'agedPayables'])->name('reports.aged-payables');
+    Route::get('reports/aged-payables-summary', [ReportController::class, 'agedPayablesSummary'])->name('reports.aged-payables-summary');
+    Route::get('reports/ap-history', [ReportController::class, 'apHistory'])->name('reports.ap-history');
 
     // --- AP Invoices: static routes before {invoice} ---
     Route::get('ap-invoices', [ApInvoiceController::class, 'index'])->name('ap-invoices.index');

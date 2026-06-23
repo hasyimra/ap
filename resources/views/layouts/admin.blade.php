@@ -79,8 +79,23 @@
                 </a>
             </li>
             <li class="sidebar-list">
+                <a class="sidebar-link {{ request()->routeIs('reports.open-payables') ? 'active' : '' }}" href="{{ route('reports.open-payables') }}">
+                    <i data-feather="file"></i><span>Open Payables</span>
+                </a>
+            </li>
+            <li class="sidebar-list">
                 <a class="sidebar-link {{ request()->routeIs('reports.aged-payables') ? 'active' : '' }}" href="{{ route('reports.aged-payables') }}">
                     <i data-feather="bar-chart-2"></i><span>Aged Payables</span>
+                </a>
+            </li>
+            <li class="sidebar-list">
+                <a class="sidebar-link {{ request()->routeIs('reports.aged-payables-summary') ? 'active' : '' }}" href="{{ route('reports.aged-payables-summary') }}">
+                    <i data-feather="pie-chart"></i><span>Aged Payables Summary</span>
+                </a>
+            </li>
+            <li class="sidebar-list">
+                <a class="sidebar-link {{ request()->routeIs('reports.ap-history') ? 'active' : '' }}" href="{{ route('reports.ap-history') }}">
+                    <i data-feather="clock"></i><span>AP History</span>
                 </a>
             </li>
         @endunless
